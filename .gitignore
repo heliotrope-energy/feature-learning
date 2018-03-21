@@ -3,8 +3,17 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# mac stuff
+*.DS_Store
+
 # C extensions
 *.so
+
+#image files
+*.png
+
+#data
+*.np
 
 # Distribution / packaging
 .Python
