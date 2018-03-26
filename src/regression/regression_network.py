@@ -1,5 +1,18 @@
 import tensorflow as tf
 import numpy as np
+from tqdm import trange, tqdm
+
+def variable_summaries(var):
+  """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+  with tf.name_scope('summaries'):
+    mean = tf.reduce_mean(var)
+    tf.summary.scalar('mean', mean)
+    with tf.name_scope('stddev'):
+      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+    tf.summary.scalar('stddev', stddev)
+    tf.summary.scalar('max', tf.reduce_max(var))
+    tf.summary.scalar('min', tf.reduce_min(var))
+    tf.summary.histogram('histogram', var)
 
 class RegressionNetwork:
     '''
@@ -35,13 +48,21 @@ class RegressionNetwork:
         print("initializing network")
         self.feats, self.output_prediction = self.build_network()
 
-        self.loss = tf.losses.mean_squared_error(self.Y, self.output_prediction)
+        with tf.name_scope("loss"):
+            self.loss = tf.losses.mean_squared_error(self.Y, self.output_prediction)
 
-        self.train_op = tf.train.AdamOptimizer().minimize(self.loss)
+        tf.summary.scalar('loss', self.loss)
+
+        with tf.name_scope('train'):
+            self.train_op = tf.train.AdamOptimizer().minimize(self.loss)
 
         self.sess.run(tf.global_variables_initializer())
 
         self.saver = tf.train.Saver()
+
+        #add FileWriter for TensorBoard
+        self.merged_summary = tf.summary.merge_all()
+        self.train_writer = tf.summary.FileWriter(self.save_loc + '/train', self.sess.graph)
 
 
     def split_data(self, num_train=0.9):
@@ -74,33 +95,35 @@ class RegressionNetwork:
         '''
 
         #convolutional layers
-        c1 = tf.layers.conv2d(inputs=self.X, filters=64, kernel_size=[25,25], padding="same", activation=tf.nn.relu)
+        with tf.name_scope("conv1"):
+            c1 = tf.layers.conv2d(inputs=self.X, filters=64, kernel_size=[25,25], padding="same", activation=tf.nn.relu, name="conv1")
+            mp1 = tf.layers.max_pooling2d(inputs=c1, pool_size=[10, 10], strides=5, name="max_pool1")
 
-        mp1 = tf.layers.max_pooling2d(inputs=c1, pool_size=[10, 10], strides=5)
+        with tf.name_scope("conv2"):
+            c2 = tf.layers.conv2d(inputs=mp1, filters=32, kernel_size=[10, 10], padding="same", activation=tf.nn.relu, name="conv2")
+            mp2 = tf.layers.max_pooling2d(inputs=c2, pool_size=[4,4], strides=2, name="max_pool2")
 
-        c2 = tf.layers.conv2d(inputs=mp1, filters=32, kernel_size=[10, 10], padding="same", activation=tf.nn.relu)
-
-        mp2 = tf.layers.max_pooling2d(inputs=c2, pool_size=[4,4], strides=2)
-
-        c3 = tf.layers.conv2d(inputs=mp2, filters=16, kernel_size=[5, 5], padding="same", activation=tf.nn.relu)
-
-        mp3 = tf.layers.max_pooling2d(inputs=c3, pool_size=[2, 2], strides=2)
+        with tf.name_scope("conv3"):
+            c3 = tf.layers.conv2d(inputs=mp2, filters=16, kernel_size=[5, 5], padding="same", activation=tf.nn.relu, name="conv3")
+            mp3 = tf.layers.max_pooling2d(inputs=c3, pool_size=[2, 2], strides=2, name="max_pool3")
 
         #dense layers w/dropout
         mp3_flat = tf.reshape(mp3, [-1, mp3.get_shape()[1]*mp3.get_shape()[2]*mp3.get_shape()[3]])
 
-        dense1 = tf.layers.dense(inputs=mp3_flat, units=1024, activation=tf.nn.relu)
 
-        dropout = tf.layers.dropout(inputs=dense1, rate=self.keep_prob)
+        with tf.name_scope("dense1"):
+            dense1 = tf.layers.dense(inputs=mp3_flat, units=1024, activation=tf.nn.relu, name="dense1")
+            dropout = tf.layers.dropout(inputs=dense1, rate=self.keep_prob)
 
         #feature embedding layer
-        feats = tf.layers.dense(inputs=dropout, units=self.embed_size, activation=tf.nn.relu)
+        with tf.name_scope("feats"):
+            feats = tf.layers.dense(inputs=dropout, units=self.embed_size, activation=tf.nn.relu, name="feats")
 
         #predicts single regression output
-        output = tf.layers.dense(inputs=feats, units=1, activation=tf.nn.relu)
-
-        #'flatten' to avoid shape issues
-        output_prediction = tf.reshape(output, [-1])
+        with tf.name_scope("output"):
+            output = tf.layers.dense(inputs=feats, units=1, activation=tf.nn.relu, name="output")
+            #'flatten' to avoid shape issues
+            output_prediction = tf.reshape(output, [-1])
 
         return feats, output_prediction
 
@@ -116,14 +139,20 @@ class RegressionNetwork:
 
         #TODO: progress bar
         print("training! ")
-        for e in range(self.epochs):
+        epochs = trange(self.epochs)
+        for e in epochs:
+            epochs.set_description("Epoch {}".format(e))
             sum_loss = 0.0
-            for i, batch in enumerate(batch_indices):
-                loss, _ = self.sess.run([self.loss, self.train_op], feed_dict={self.X:self.train_imgs[batch,:,:,:],
+            batches = tqdm(batch_indices)
+            for i, batch in enumerate(batches) :
+                batches.set_description("Batch {}".format(i))
+                loss, summary, _ = self.sess.run([self.loss,  self.merged_summary, self.train_op,], feed_dict={self.X:self.train_imgs[batch,:,:,:],
                                                                                 self.Y:self.train_targets[batch],
                                                                                 self.keep_prob:0.4})
+                batches.set_postfix(loss=loss)
+                self.train_writer.add_summary(summary, e*i)
                 sum_loss += loss
-            print("Average loss for epoch {}".format(loss/nbatches))
+            epochs.set_postfix(avg_loss=sum_loss/nbatches)
 
         print("training complete, saving")
         self.saver.save(sess, self.save_loc)
