@@ -21,6 +21,9 @@ def load_data(datafile):
 
     df = pd.read_csv(datafile)
 
+    #remove NAN rows
+    df = df.dropna()
+
     img_loc = os.path.dirname(datafile)
 
     files = df['filename']
@@ -38,7 +41,7 @@ def run(args):
     recs = dat.to_records()
 
     #saving data as npz
-    np.savez_compressed("data_3_20.npz", data=recs, images=imgs)
+    np.savez_compressed("../data/data_3_20.npz", data=recs, images=imgs)
 
 
 

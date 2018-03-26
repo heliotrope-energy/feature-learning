@@ -21,15 +21,12 @@ def run(args):
 
     #load data from npz
     dat = np.load(args.data)
-
-
     #convert to pandas array
     cc_data = pd.DataFrame.from_records(dat['data'])
 
     images = dat['images']
 
     #select
-
     network = RegressionNetwork(images, cc_data['Array voltage V'].as_matrix(), args.out)
 
     network.train()

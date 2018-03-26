@@ -144,7 +144,7 @@ class RegressionNetwork:
             epochs.set_description("Epoch {}".format(e))
             sum_loss = 0.0
             batches = tqdm(batch_indices)
-            for i, batch in enumerate(batches) :
+            for i, batch in enumerate(batches):
                 batches.set_description("Batch {}".format(i))
                 loss, summary, _ = self.sess.run([self.loss,  self.merged_summary, self.train_op,], feed_dict={self.X:self.train_imgs[batch,:,:,:],
                                                                                 self.Y:self.train_targets[batch],
